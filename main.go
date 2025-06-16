@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
@@ -8,16 +9,36 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
+	"github.com/jarednil/go-art/internal/database"
 	"github.com/joho/godotenv"
+
+	_ "github.com/lib/pq"
 )
+
+type apiConfig struct {
+	DB *database.Queries
+}
 
 func main() {
 
 	godotenv.Load() // Reading environment
 	port := os.Getenv("PORT")
-
 	if port == "" {
 		log.Fatal("PORT string is not be empty")
+	}
+
+	dbURL := os.Getenv("DB_URL")
+	if dbURL == "" {
+		log.Fatal("dbURL string is not be empty")
+	}
+
+	conn, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatal("Cannot create database.", err)
+	}
+
+	apiCfg := apiConfig{
+		DB: database.New((conn)),
 	}
 
 	router := chi.NewRouter()
@@ -32,7 +53,10 @@ func main() {
 	}))
 
 	v1 := chi.NewRouter()
-	v1.HandleFunc("/ready", handlerReadiness)
+	v1.Get("/ready", handlerReadiness)
+	v1.Get("/error", handlerError)
+	v1.Post("/users", apiCfg.handlerCreateUser)
+	v1.Get("/users", apiCfg.handlerGetUser)
 
 	router.Mount("/v1", v1)
 
@@ -41,8 +65,8 @@ func main() {
 		Addr:    ":" + port,
 	}
 
-	fmt.Printf("Сервер стартует на %v  порту", port)
-	err := srv.ListenAndServe()
+	fmt.Printf("Сервер стартует на %v порту", port)
+	err = srv.ListenAndServe()
 	if err != nil {
 		log.Fatal(err)
 	}
